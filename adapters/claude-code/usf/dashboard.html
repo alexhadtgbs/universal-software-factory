@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>USF Delivery Board</title>
+<!-- Serve this folder: `cd usf && python -m http.server 8000`, then open /dashboard.html.
+     Reads jobs/<id>/job.json and the job's markdown files; polls every 2 seconds. No dependencies. -->
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --text: #1b1f24; --muted: #5d6673; --line: #dde1e6;
+  --pass: #1f7a4d; --changes: #b3261e; --pending: #8a919b; --live: #2557d6; --human: #b25e00;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111418; --panel: #1a1e24; --text: #e6e9ed; --muted: #9aa3ae; --line: #2c323a;
+    --pass: #4cc38a; --changes: #ff6b5f; --pending: #79818c; --live: #6f9bff; --human: #f0a345;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111418; --panel: #1a1e24; --text: #e6e9ed; --muted: #9aa3ae; --line: #2c323a;
+  --pass: #4cc38a; --changes: #ff6b5f; --pending: #79818c; --live: #6f9bff; --human: #f0a345;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 16px; border-bottom: 1px solid var(--line); }
+h1 { margin: 0; font-size: 18px; }
+#status { color: var(--muted); font-size: 12px; }
+#board { display: grid; grid-template-columns: repeat(6, minmax(180px, 1fr)); gap: 12px; padding: 16px; overflow-x: auto; }
+@media (max-width: 760px) { #board { grid-template-columns: 1fr; } }
+.col h2 { margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.card { display: block; width: 100%; text-align: left; margin-bottom: 8px; padding: 10px; background: var(--panel); color: var(--text);
+  border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: 6px; cursor: pointer; font: inherit; }
+.card.live { border-left-color: var(--live); }
+.card.human { border-left-color: var(--human); }
+.card .id { font-weight: 600; font-size: 13px; }
+.card .item { color: var(--muted); font-size: 12px; margin: 2px 0 6px; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.chip { font-size: 11px; padding: 1px 6px; border-radius: 10px; border: 1px solid currentColor; }
+.PASS { color: var(--pass); } .CHANGES { color: var(--changes); } .pending { color: var(--pending); }
+#detail { position: fixed; inset: 0 0 0 auto; width: min(720px, 100%); background: var(--panel); border-left: 1px solid var(--line);
+  display: none; flex-direction: column; }
+#detail.open { display: flex; }
+#detail header { align-items: center; }
+#files { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 16px; border-bottom: 1px solid var(--line); }
+#files button, #close { font: inherit; font-size: 12px; padding: 3px 8px; background: none; color: var(--text); border: 1px solid var(--line); border-radius: 4px; cursor: pointer; }
+#files button.on { border-color: var(--live); color: var(--live); }
+#doc { flex: 1; overflow: auto; margin: 0; padding: 16px; white-space: pre-wrap; font: 13px/1.5 ui-monospace, Consolas, monospace; }
+.empty { color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<header><h1>USF Delivery Board</h1><span id="status">loading…</span></header>
+<main id="board"></main>
+<aside id="detail" aria-label="Job files">
+  <header><strong id="d-title"></strong><button id="close" type="button">Close</button></header>
+  <nav id="files"></nav>
+  <pre id="doc"></pre>
+</aside>
+<script>
+const STAGES = ['spec', 'build', 'review', 'approve', 'needs-human', 'merged']
+const LIVE = new Set(['spec', 'build', 'review', 'approve'])
+const $ = (id) => document.getElementById(id)
+let open = null
+
+// python -m http.server lists a directory as HTML links; read them.
+async function list(path) {
+  const res = await fetch(path, { cache: 'no-store' })
+  if (!res.ok) return []
+  const doc = new DOMParser().parseFromString(await res.text(), 'text/html')
+  return [...doc.querySelectorAll('a')].map((a) => decodeURIComponent(a.getAttribute('href')))
+}
+
+async function loadJobs() {
+  const dirs = (await list('jobs/')).filter((h) => /^\d{3}-.+\/$/.test(h))
+  const jobs = await Promise.all(dirs.map(async (d) => {
+    const res = await fetch(`jobs/${d}job.json`, { cache: 'no-store' })
+    return res.ok ? res.json() : null
+  }))
+  return jobs.filter(Boolean)
+}
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag)
+  if (cls) e.className = cls
+  if (text != null) e.textContent = text
+  return e
+}
+
+function card(job) {
+  const b = el('button', 'card' + (LIVE.has(job.stage) ? ' live' : '') + (job.stage === 'needs-human' ? ' human' : ''))
+  b.type = 'button'
+  b.append(el('div', 'id', job.id), el('div', 'item', job.item || ''))
+  if (job.round > 0) {
+    const chips = el('div', 'chips')
+    chips.append(el('span', 'chip pending', `R${job.round}`))
+    for (const [lens, v] of Object.entries(job.reviews || {})) chips.append(el('span', `chip ${v}`, lens))
+    b.append(chips)
+  }
+  b.onclick = () => showJob(job)
+  return b
+}
+
+async function refresh() {
+  try {
+    const jobs = await loadJobs()
+    const board = $('board')
+    board.replaceChildren(...STAGES.map((s) => {
+      const col = el('section', 'col')
+      const inStage = jobs.filter((j) => j.stage === s)
+      col.append(el('h2', null, `${s} (${inStage.length})`))
+      inStage.length ? col.append(...inStage.map(card)) : col.append(el('div', 'empty', '—'))
+      return col
+    }))
+    $('status').textContent = `${jobs.length} job(s) · ${new Date().toLocaleTimeString()}`
+    if (open) { const j = jobs.find((x) => x.id === open.id); if (j) $('d-title').textContent = `${j.id} · ${j.stage}${j.round ? ` · round ${j.round}` : ''}` }
+  } catch (err) {
+    $('status').textContent = `Cannot read jobs/: ${err.message}. Serve this folder with python -m http.server.`
+  }
+}
+
+async function showJob(job) {
+  open = job
+  $('detail').classList.add('open')
+  $('d-title').textContent = `${job.id} · ${job.stage}${job.round ? ` · round ${job.round}` : ''}`
+  const base = `jobs/${job.id}/`
+  const top = (await list(base)).filter((h) => h.endsWith('.md') || h === 'job.json')
+  const rounds = (await list(base)).filter((h) => /^round-\d+\/$/.test(h)).sort()
+  const files = [...top]
+  for (const r of rounds) files.push(...(await list(base + r)).filter((h) => h.endsWith('.md')).map((h) => r + h))
+  const nav = $('files')
+  nav.replaceChildren(...files.map((f) => {
+    const b = el('button', null, f); b.type = 'button'
+    b.onclick = async () => {
+      for (const x of nav.children) x.classList.toggle('on', x === b)
+      const res = await fetch(base + f, { cache: 'no-store' })
+      $('doc').textContent = res.ok ? await res.text() : `Cannot read ${f}`
+    }
+    return b
+  }))
+  $('doc').textContent = files.length ? 'Pick a file.' : 'No files yet.'
+  const first = nav.querySelector('button')
+  if (first) first.click()
+}
+
+$('close').onclick = () => { open = null; $('detail').classList.remove('open') }
+refresh()
+setInterval(refresh, 2000)
+</script>
+</body>
+</html>
