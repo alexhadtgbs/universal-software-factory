@@ -1,5 +1,8 @@
 # Version History
 
+## 0.8.2 — Backlog on the delivery board
+- The Claude Code adapter's `usf/dashboard.html` now shows a Backlog column read from `usf/backlog.md`: open items grouped by `##` section, the item `/usf-loop next` will take marked, items tagged `needs …` marked as waiting on a decision, claimed items shown until they become jobs, and a click opens the full item text.
+
 ## 0.8.1 — Claude Code adapter install fix
 - The Claude Code adapter install steps now copy `templates/`, `workflows/`, `docs/`, `quality/`, `scripts/`, and `VERSION` into `.claude/skills/universal-software-factory/` next to `SKILL.md`. The agents and `SKILL.md` refer to these paths; with only `SKILL.md` installed, reviewers could not find `templates/review-report.md` and worked without USF's templates.
 

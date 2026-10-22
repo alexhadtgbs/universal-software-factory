@@ -61,7 +61,7 @@ Run several jobs in parallel by starting `/usf-loop` in separate Claude Code ses
 cd usf && python -m http.server 8000
 ```
 
-Open `http://localhost:8000/dashboard.html`. Cards move through stages, review chips fill in as verdicts land, escalated jobs are highlighted, and clicking a card shows its files.
+Open `http://localhost:8000/dashboard.html`. The first column is the backlog, read from `usf/backlog.md`: open items grouped by their `##` section, the item `/usf-loop next` will take marked **next**, and items tagged `needs …` (e.g. `[feature, needs REQ + TDR]`) marked as waiting on a decision. Job cards move through stages, review chips fill in as verdicts land, escalated jobs are highlighted, and clicking a card shows its files (or a backlog item's full text).
 
 ## Checking a job
 

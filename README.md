@@ -1,4 +1,4 @@
-# Universal Software Factory (USF) — v0.8.1
+# Universal Software Factory (USF) — v0.8.2
 
 USF is a portable, AI-assisted software production system. It combines product discovery, requirements, architecture decisions, engineering workflows, quality gates, and tool adapters. The long-term product direction is a native macOS workspace that can evolve into a broader platform; this is a roadmap, not a requirement imposed on every project USF helps build.
 

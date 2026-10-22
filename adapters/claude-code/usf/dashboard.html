@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>USF Delivery Board</title>
 <!-- Serve this folder: `cd usf && python -m http.server 8000`, then open /dashboard.html.
-     Reads jobs/<id>/job.json and the job's markdown files; polls every 2 seconds. No dependencies. -->
+     Reads backlog.md, jobs/<id>/job.json and the job's markdown files; polls every 2 seconds. No dependencies. -->
 <style>
 :root {
   --bg: #f6f7f9; --panel: #ffffff; --text: #1b1f24; --muted: #5d6673; --line: #dde1e6;
@@ -26,7 +26,7 @@ body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 sys
 header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 16px; border-bottom: 1px solid var(--line); }
 h1 { margin: 0; font-size: 18px; }
 #status { color: var(--muted); font-size: 12px; }
-#board { display: grid; grid-template-columns: repeat(6, minmax(180px, 1fr)); gap: 12px; padding: 16px; overflow-x: auto; }
+#board { display: grid; grid-template-columns: minmax(240px, 1.4fr) repeat(6, minmax(180px, 1fr)); gap: 12px; padding: 16px; overflow-x: auto; }
 @media (max-width: 760px) { #board { grid-template-columns: 1fr; } }
 .col h2 { margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
 .card { display: block; width: 100%; text-align: left; margin-bottom: 8px; padding: 10px; background: var(--panel); color: var(--text);
@@ -38,6 +38,12 @@ h1 { margin: 0; font-size: 18px; }
 .chips { display: flex; flex-wrap: wrap; gap: 4px; }
 .chip { font-size: 11px; padding: 1px 6px; border-radius: 10px; border: 1px solid currentColor; }
 .PASS { color: var(--pass); } .CHANGES { color: var(--changes); } .pending { color: var(--pending); }
+.blocked { color: var(--human); } .next { color: var(--live); }
+.card.queued .item { -webkit-line-clamp: 3; display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; color: var(--text); }
+.card.queued.waiting { border-left-color: var(--human); }
+.card.queued.up { border-left-color: var(--live); }
+.col .group { margin: 12px 0 6px; font-size: 11px; color: var(--muted); }
+.col .group:first-of-type { margin-top: 0; }
 #detail { position: fixed; inset: 0 0 0 auto; width: min(720px, 100%); background: var(--panel); border-left: 1px solid var(--line);
   display: none; flex-direction: column; }
 #detail.open { display: flex; }
@@ -101,18 +107,81 @@ function card(job) {
   return b
 }
 
+// backlog.md: "## " headings group items; "- [ ] text [tags]" is queued, "- [x] text → claimed" is being picked up.
+// Lines already turned into a job ("→ <job-id>") show as job cards instead.
+async function loadBacklog() {
+  const res = await fetch('backlog.md', { cache: 'no-store' })
+  if (!res.ok) return []
+  let group = ''
+  const items = []
+  for (const line of (await res.text()).split(/\r?\n/)) {
+    const h = line.match(/^##\s+(.*)/)
+    if (h) { group = h[1].trim(); continue }
+    const m = line.match(/^- \[( |x)\] (.*)$/)
+    if (!m) continue
+    let text = m[2].trim()
+    const claim = text.match(/\s*→\s*(\S+)$/)
+    if (claim) text = text.slice(0, claim.index)
+    if (m[1] === 'x' && !(claim && claim[1] === 'claimed')) continue
+    const tag = text.match(/\s*\[([^\]]+)\]$/)
+    if (tag) text = text.slice(0, tag.index)
+    const tags = tag ? tag[1].split(',').map((t) => t.trim()).filter(Boolean) : []
+    items.push({ group, text, tags, claimed: m[1] === 'x' })
+  }
+  return items
+}
+
+function backlogCard(it, isNext) {
+  const waiting = it.tags.some((t) => /^needs\b/i.test(t))
+  const b = el('button', 'card queued' + (waiting ? ' waiting' : isNext ? ' up' : ''))
+  b.type = 'button'
+  b.append(el('div', 'item', it.text.replace(/`/g, '')))
+  const chips = el('div', 'chips')
+  if (isNext) chips.append(el('span', 'chip next', 'next'))
+  if (it.claimed) chips.append(el('span', 'chip next', 'claimed'))
+  for (const t of it.tags) chips.append(el('span', 'chip ' + (/^needs\b/i.test(t) ? 'blocked' : 'pending'), t))
+  if (/\(defect\)/i.test(it.text)) chips.append(el('span', 'chip CHANGES', 'defect'))
+  if (/always escalate/i.test(it.text)) chips.append(el('span', 'chip blocked', 'escalates'))
+  b.append(chips)
+  b.onclick = () => showItem(it)
+  return b
+}
+
+function backlogColumn(items) {
+  const col = el('section', 'col')
+  const queued = items.filter((i) => !i.claimed)
+  col.append(el('h2', null, `backlog (${queued.length})`))
+  if (!items.length) { col.append(el('div', 'empty', '—')); return col }
+  const next = items.find((i) => !i.claimed)  // what /usf-loop next takes
+  let group = null
+  for (const it of items) {
+    if (it.group !== group) { group = it.group; if (group) col.append(el('div', 'group', group)) }
+    col.append(backlogCard(it, it === next))
+  }
+  return col
+}
+
+function showItem(it) {
+  open = null
+  $('detail').classList.add('open')
+  $('d-title').textContent = it.group ? `Backlog · ${it.group}` : 'Backlog'
+  $('files').replaceChildren()
+  const tags = it.tags.length ? `\n\nTags: ${it.tags.join(', ')}` : ''
+  $('doc').textContent = `${it.text}${tags}\n\nRun it with /usf-loop next when it is first in the queue, or /usf-loop <item>.`
+}
+
 async function refresh() {
   try {
-    const jobs = await loadJobs()
+    const [jobs, backlog] = await Promise.all([loadJobs(), loadBacklog()])
     const board = $('board')
-    board.replaceChildren(...STAGES.map((s) => {
+    board.replaceChildren(backlogColumn(backlog), ...STAGES.map((s) => {
       const col = el('section', 'col')
       const inStage = jobs.filter((j) => j.stage === s)
       col.append(el('h2', null, `${s} (${inStage.length})`))
       inStage.length ? col.append(...inStage.map(card)) : col.append(el('div', 'empty', '—'))
       return col
     }))
-    $('status').textContent = `${jobs.length} job(s) · ${new Date().toLocaleTimeString()}`
+    $('status').textContent = `${backlog.filter((i) => !i.claimed).length} in backlog · ${jobs.length} job(s) · ${new Date().toLocaleTimeString()}`
     if (open) { const j = jobs.find((x) => x.id === open.id); if (j) $('d-title').textContent = `${j.id} · ${j.stage}${j.round ? ` · round ${j.round}` : ''}` }
   } catch (err) {
     $('status').textContent = `Cannot read jobs/: ${err.message}. Serve this folder with python -m http.server.`
