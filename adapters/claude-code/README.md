@@ -30,7 +30,14 @@ usf/
 ## Install into a project
 
 1. Copy `.claude/` and `usf/` into the repo root.
-2. Copy the USF core skill: `skills/universal-software-factory/` → `.claude/skills/universal-software-factory/`. The agents read its security, UX, and QA rules.
+2. Copy the USF core skill: `skills/universal-software-factory/` → `.claude/skills/universal-software-factory/`. The agents read its security, UX, and QA rules. Then copy `templates/`, `workflows/`, `docs/`, `quality/`, `scripts/`, and `VERSION` from the USF root into that same folder: `SKILL.md` and the agents refer to these paths (for example `templates/review-report.md`), and without them the agents work without USF's templates.
+
+   ```bash
+   USF=/path/to/universal-software-factory
+   mkdir -p .claude/skills
+   cp -r "$USF/skills/universal-software-factory" .claude/skills/
+   cp -r "$USF/templates" "$USF/workflows" "$USF/docs" "$USF/quality" "$USF/scripts" "$USF/VERSION" .claude/skills/universal-software-factory/
+   ```
 3. Copy `scripts/validate_job.py` → `usf/validate_job.py` (optional; the orchestrator runs it at the end of each job when present).
 4. Add `/usf/jobs/` to `.gitignore` — job folders are runtime state.
 5. Make sure `AGENTS.md` (or `CLAUDE.md`) states: fresh-checkout setup, how to start the app on a given port, test/build/lint commands, the integration branch if not `main`, the browser automation tool agents should use (if the product has UI), and any extra always-escalate areas.

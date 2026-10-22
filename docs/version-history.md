@@ -1,5 +1,8 @@
 # Version History
 
+## 0.8.1 — Claude Code adapter install fix
+- The Claude Code adapter install steps now copy `templates/`, `workflows/`, `docs/`, `quality/`, `scripts/`, and `VERSION` into `.claude/skills/universal-software-factory/` next to `SKILL.md`. The agents and `SKILL.md` refer to these paths; with only `SKILL.md` installed, reviewers could not find `templates/review-report.md` and worked without USF's templates.
+
 ## 0.8.0 — Agentic delivery loop
 - Added workflow 09: an executable spec → build → parallel review → approval-gate loop for approved backlog items, with a file-based artifact contract, `job.json` state schema, bounded rework, per-job isolation, and an escalation policy aligned with USF's human-approval and residual-risk rules.
 - Added job spec, build report, review report, and approval decision templates.

@@ -1,6 +1,6 @@
 ---
 name: universal-software-factory
-version: 0.8.0
+version: 0.8.1
 description: Portable workflows for product discovery, requirements, architecture decisions, implementation, and software quality.
 ---
 

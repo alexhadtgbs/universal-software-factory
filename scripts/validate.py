@@ -83,6 +83,9 @@ ARTIFACTS = {
         "adapters/claude-code/usf/backlog.md",
         "adapters/claude-code/usf/dashboard.html",
     ],
+    "0.8.1": [
+        "adapters/claude-code/README.md",
+    ],
 }
 
 # Key policy statements the skill must keep.
